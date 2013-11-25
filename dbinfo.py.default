@@ -1,0 +1,4 @@
+dbip = 'localhost'
+dbuser = 'user'
+dbpass = 'password'
+dbname = 'database'
