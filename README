@@ -1,0 +1,8 @@
+This plugin provides data for Pokemon. It also searches bulbapedia for missing stats.
+
+The following (non-core) Python Modules are (currently) required:
+- python-mysqldb
+- python-beautifulsoup
+
+Rename and edit the "dbinfo.py.default" with correct credentials to "dbinfo.py".
+The (currently incomplete) database can be imported via pokemon.sql
