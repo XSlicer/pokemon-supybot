@@ -102,13 +102,22 @@ class Pokemon(callbacks.Plugin):
     type = wrap(type, ['something'])
     
     def evolve(self, irc, msg, args, poke):
-        """ Gives how to evolve a <pokemon>.
+        """ <pokemon>
+        
+        Gives how to evolve a <pokemon>. If the pokemon can evolve 
+        multiple times, every evolve is written on a seperate line.
+        Pokemon evolve in 3 possible ways: Leveling, trading or stones.
+        If an evolve doesn't say trade or stone, it always need to level
+        up before it initiates the evolve. The text after "Trade" is
+        always an item.
         """
         q = self._db(poke, "evos")
         if q:
-            irc.reply(q)
+            msg = poke + ' evolves into: '
+            for a in q:
+                irc.reply(msg + a[1] + ' -> ' + a[2])
         else:
-            irc.reply('Error: Name wrong or database not up to date')
+            irc.reply('Error: Name wrong')
     
     evolve = wrap(evolve, ['something'])
     
