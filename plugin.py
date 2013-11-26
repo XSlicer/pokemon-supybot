@@ -41,7 +41,8 @@ from bs4 import BeautifulSoup as BS, SoupStrainer as SS
 from dbinfo import *
 
 class Pokemon(callbacks.Plugin):
-    """This module calls Steam for statistics.
+    """This module is for various Pokemon info. It retrieves data from
+    a MySQL-database and Bulbapedia.
     """
     
     def _db(self, poke, querytype):
@@ -51,8 +52,11 @@ class Pokemon(callbacks.Plugin):
             if querytype == "poke":
                 cur.execute("SELECT * FROM pokemon WHERE Name='%s'" % poke)
             if querytype == "evos":
-                cur.execute("SELECT ID FROM pokemon WHERE Name='%s'" % poke)
-                cur.execute("SELECT * FROM pokemon WHERE EvoFrom='%s'" % cur.fetchone()[0])
+                try:
+                    cur.execute("SELECT ID FROM pokemon WHERE Name='%s'" % poke)
+                    cur.execute("SELECT * FROM pokemon WHERE EvoFrom='%s'" % cur.fetchone()[0])
+                except:
+                    return 0
             if querytype == "TEST":
                 cur.execute("" % poke)
             return cur.fetchall()
