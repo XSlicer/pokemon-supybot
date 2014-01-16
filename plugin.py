@@ -58,9 +58,21 @@ class Pokemon(callbacks.Plugin):
             if querytype == "X" or querytype == "Y":
                 cur.execute("SELECT * FROM megas WHERE Form='%s' AND PokeID=(SELECT ID FROM pokemon WHERE Name='%s')" % (querytype, poke))
             if querytype == "forme":
-                cur.execute("SELECT * FROM formes WHERE Forme='%s'" % poke)
+                cur.execute("SELECT * FROM formes WHERE PokeID=(SELECT ID FROM pokemon WHERE Name='%s')" % poke)
             if querytype == "TEST":
                 cur.execute("" % poke)
+            return cur.fetchall()
+        except mdb.Error, e:
+            return 0
+        finally:
+            if con:
+                con.close()
+    
+    def _dbforme(self, poke, formetype):
+        try:
+            con = mdb.connect(dbip, dbuser, dbpass, dbname)
+            cur = con.cursor()
+            cur.execute("SELECT * FROM formes WHERE PokeID=(SELECT ID FROM pokemon WHERE Name='%s') AND Form='%s'" % (poke, formetype))
             return cur.fetchall()
         except mdb.Error, e:
             return 0
@@ -84,41 +96,81 @@ class Pokemon(callbacks.Plugin):
                 msg += '- Type: ' + i[3] 
                 if i[4]:
                     msg += '/' + i[4]
-                msg2 = "Stats - HP: " + str(i[5]) + " Atk: " + str(i[6]) + " Def: " + str(i[7]) + \
-                    " Sp.Atk: " + str(i[8]) + " Sp.Def: " + str(i[9]) + " Spd: " + str(i[10])
+                msg2 = "Stats - HP: %s Atk: %s Def: %s Sp.Atk: %s Sp.Def: %s Spd: %s " % (i[5], i[6], i[7], i[8], i[9], i[10])
                 irc.reply(msg)
                 irc.reply(msg2)
         else:
             irc.reply("Pokemon has no Megavolve.")
-    
+            
     mega = wrap(mega, ['something'])
     
-    def ivsingle(self, irc, msg, args, poke, stat, amount, level, nature):
-        """<[forme] pokemon> <stat> <amount> <level> <nature>
+    def forme(self, irc, msg, args, poke):
+        """<pokemon>
+        
+        Replies all the formes for given pokemon."""
+        data = self._db(poke, "forme")
+        if data:
+            for i in data:
+                msg = i[2] + ' ' + poke + ' '
+                msg += '- Type: ' + i[3] 
+                if i[4]:
+                    msg += '/' + i[4]
+                msg2 = "Stats - HP: %s Atk: %s Def: %s Sp.Atk: %s Sp.Def: %s Spd: %s " % (i[5], i[6], i[7], i[8], i[9], i[10])
+                irc.reply(msg)
+                irc.reply(msg2)
+        else:
+            irc.reply("Pokemon has no formes.")
+    
+    forme = wrap(forme, ['something'])
+    
+    def ivsingle(self, irc, msg, args, poke, stat, amount, level, nature, ev):
+        """<[forme] pokemon> <stat> <amount> <level> <nature> [<ev>]
         
         Calculates the IV of a stat with given pokemon/level/nature.
-        EVs are calculated as 0. Stat is "HP/ATK/DEF/STK/SDF/SPD".
+        Stat is "HP/ATK/DEF/STK/SDF/SPD". If EV is empty, it will be 0.
         If pokemon has a forme (like Mega), capture it like "Mega Charizard X"
         or "Trash Wormadam" (plant is default).
         """
         poke = poke.split(' ')
         formes = ['SANDY', 'TRASH', 'SUNNY', 'RAINY', 'SNOWY', 'ATTACK', \
-                  'DEFENSE', 'SPEED', 'SUNSHINE', 'HEAT', 'WASH', 'FROST', \
-                  'FAN', 'MOW', 'ORIGIN', 'SKY', 'ZEN', 'THERIAN', 'BLACK', \
-                  'WHITE', 'PIROUETTE', 'BLADE', 'AVERAGE', 'LARGE', 'SUPER']
-        if str.upper(poke[0]) == 'MEGA':
+                  'DEFENSE', 'SPEED', 'HEAT', 'WASH', 'FROST', 'FAN', 'MOW', \
+                  'ORIGIN', 'SKY', 'ZEN', 'THERIAN', 'BLACK', 'WHITE', \
+                  'PIROUETTE', 'BLADE', 'AVERAGE', 'LARGE', 'SUPER']
+        sts = ('HP', 'ATK', 'DEF', 'STK', 'SDF', 'SPD')
+        natures = ('LONELY', 'BRAVE', 'ADAMANT', 'NAUGHTY', 'BOLD', 'RELAXED', 'IMPISH', 'LAX', 'MODEST', 'MILD', 'QUIET', 'RASH', 'CALM', 'GENTLE', 'SASSY', 'CAREFUL', 'TIMID', 'HASTY', 'JOLLY', 'NAIVE')
+        natureP = ('ATK','ATK','ATK','ATK','DEF','DEF','DEF','DEF','SPD','SPD','SPD','SPD','STK','STK','STK','STK','SPF','SPF','SPF','SPF')
+        natureM = ('DEF','SPD','STK','SDF','ATK','SPD','STK','SDF','ATK','DEF','STK','SDF','ATK','DEF','SPD','SDF','ATK','DEF','SPD','STK')
+        extra = 5
+        hp = 0
+        
+        if not ev: ev = 0
+        
+        if poke[0].upper() == 'MEGA':
             if len(poke) > 2:
-                stats = self._db(poke, str.upper(poke[2]))
+                stats = self._db(poke[1], poke[2].upper())[0][5:11]
             else:
-                stats = self._db(poke, 'mega')
-        elif str.upper(poke[0]) in formes:
-            stats = self._db(poke[0], 'forme')
+                stats = self._db(poke[1], 'mega')[0][5:11]
+        elif poke[0].upper() in formes:
+            stats = self._dbforme(poke[1], poke[0])[5:11]
         else:
-            stats = self._db(poke, )
-        irc.reply(str(stats))
+            stats = self._db(poke[0], 'poke')[0][7:13]
         
+        b = natures.index(nature.upper())
+        if natureP[b] == stat.upper():
+            bonus = 1.1
+        elif natureM[b] == stat.upper():
+            bonus = 0.9
+        else:
+            bonus = 1
+        if stat == 'HP':
+            extra = 10
+            hp = 100
         
-    ivsingle = wrap(ivsingle, [optional('something'), 'something', 'something', 'int', 'int', 'something'])
+        IV = (amount - ((2 * stats[sts.index(stat.upper())] + ev / 4 + hp) * level * bonus / 100) - extra * bonus) / bonus
+        
+        irc.reply(str(IV))
+        
+    ivsingle = wrap(ivsingle, ['something', 'something', 'int', 'int', 'something', optional('int')])
     
     def iv(self, irc, msg, args, species, level, nature, hp, atk, defe, spa, spd, spe):
         """ <pokemon> <level> <nature> <hp> <atk> <def> <sp.atk> <sp.def> <spd>
@@ -127,6 +179,7 @@ class Pokemon(callbacks.Plugin):
         """
         ####DOES NOT WORK - DEVELOPMENT NEEDED (rewrite to SQL request instead of file)
         ####!!!!!
+
         bases = []
  
         try:
@@ -188,6 +241,7 @@ class Pokemon(callbacks.Plugin):
             natures = [0,1,1,1,0.9,1.1]
         else:
             natures = [0,1,1,1,1,1]
+
    
         pokedb = open('local.txt', 'r')
  
@@ -230,19 +284,32 @@ class Pokemon(callbacks.Plugin):
  
         irc.reply(str(species + " (" + nature + "): HP: " + str(low[0]) + "-" + str(high[0]) + ", Atk: " + str(low[1]) + "-" + str(high[1]) + ", Def: " + str(low[2]) + "-" + str(high[2]) + ", S.Atk: " + str(low[3]) + "-" + str(high[3]) + ", S.Def: " + str(low[4]) + "-" + str(high[4]) + ", Spd: " + str(low[5]) + "-" + str(high[5])))
     
-    iv = wrap(iv, ['something', 'something', 'something', 'something', 'something', 'something', 'something', 'something', 'something'])
+    #iv = wrap(iv, ['something', 'something', 'something', 'something', 'something', 'something', 'something', 'something', 'something'])
     
     def basestats(self, irc, msg, args, poke):
         """<pokemon>
         
-        Shows the base stats of the given pokemon
+        Shows the base stats of the given pokemon. If the pokemon has a 
+        forme or mega, capture it with " (e.g. !basestats "Sandy Wormadam"
+        or "!basestats "Mega Mewtwo X"
         """
-        q = self._db(poke, "poke")[0]
-        if q:
-            msg = "HP: %s Atk: %s Def: %s Sp.Atk: %s SpDef: %s Spd: %s Total: %s Avg: %s" % (q[7], q[8], q[9], q[10], q[11], q[12], sum(q[7:13]), sum(q[7:13])/6)
-            irc.reply(msg)
+        poke = poke.split(' ')
+        formes = ['SANDY', 'TRASH', 'SUNNY', 'RAINY', 'SNOWY', 'ATTACK', \
+            'DEFENSE', 'SPEED', 'HEAT', 'WASH', 'FROST', 'FAN', 'MOW', \
+            'ORIGIN', 'SKY', 'ZEN', 'THERIAN', 'BLACK', 'WHITE', \
+            'PIROUETTE', 'BLADE', 'AVERAGE', 'LARGE', 'SUPER']
+        if poke[0].upper() == 'MEGA':
+            if len(poke) > 2:
+                q = self._db(poke[1], poke[2].upper())[0]
+            else:
+                q = self._db(poke[1], 'mega')[0]
+        elif poke[0].upper() in formes:
+            q = self._dbforme(poke[1], poke[0])[0]
         else:
-            irc.reply("Pokemon not found")
+            q = self._db(poke[0], 'poke')[0]
+        q = q[-6:]
+        msg = "HP: %s Atk: %s Def: %s Sp.Atk: %s SpDef: %s Spd: %s Total: %s Avg: %s" % (q[0], q[1], q[2], q[3], q[4], q[5], sum(q[0:5]), sum(q[0:5])/6)
+        irc.reply(msg)
         
     basestats = wrap(basestats, ['something'])
     
@@ -250,11 +317,12 @@ class Pokemon(callbacks.Plugin):
         """<pokemon>
         
         Gives the Types of the pokemon.
+        Please use "forme or mega" to check the type of a forme/mega.
         """
-        query = self._db(poke)
-        if query:
+        try:
+            query = self._db(poke, 'poke')[0]
             irc.reply(query[5] + " " + query[6])
-        else:
+        except IndexError:
             irc.reply("Pokemon not found.")
     
     type = wrap(type, ['something'])
@@ -275,7 +343,7 @@ class Pokemon(callbacks.Plugin):
             for a in q:
                 irc.reply(msg + a[1] + ' -> ' + a[2])
         else:
-            irc.reply('Error: Name wrong')
+            irc.reply('No evolution found.')
     
     evolve = wrap(evolve, ['something'])
     
@@ -365,6 +433,13 @@ class Pokemon(callbacks.Plugin):
         weak = []
         check = 0.0
         amount = 0
+        
+        if typ[0] not in typnam:
+            a = self._db(typ[0], 'poke')[0]
+            if a:
+                typ[0] = a[5]
+                typ.append(a[6])
+        
         try:
             typ[1] = str.capitalize(typ[1])
             weaklist = [a*b for a,b in zip(typeefc[typnam.index(typ[0])],typeefc[typnam.index(typ[1])])]
@@ -423,7 +498,9 @@ class Pokemon(callbacks.Plugin):
     defense = wrap(defense, ['text'])
     
     def attack(self, irc, msg, args, typ):
-        """Function to get the weakness of a given type.
+        """<type>
+        
+        Function to get the weakness of a given type.
         """
         nrm = [1,1,1,1,1,1,1,1,1,1,1,1,0.5,0,1,1,0.5,1]
         fir = [1,0.5,0.5,1,2,2,1,1,1,1,1,2,0.5,1,0.5,1,2,1]
@@ -486,5 +563,29 @@ class Pokemon(callbacks.Plugin):
 
         irc.reply(message)
     attack = wrap(attack, ['something'])
+    
+    def smogon(self, irc, msg, args, poke, gen):
+        """<pokemon> [<gen>]
+        
+        Retreives the Tier of the given pokemon for the given gen.
+        If no gen is given, will default to gen 5 (BW)
+        """
+        if gen == '1':
+            g = 'rb'
+        elif gen == '2':
+            g = 'gs'
+        elif gen == '3':
+            g = 'rs'
+        elif gen == '4':
+            g = 'dp'
+        else:
+            g = 'bw'
+        try:
+            soup = BS(urlopen('http://www.smogon.com/%s/pokemon/%s' % (g, poke)).read(), 'html.parser', parse_only=SS(class_="info"))
+            irc.reply('Gen: ' + g + ' Tier: '+ soup.get_text().split('\n\n')[3])
+        except:
+            irc.reply('Something went wrong.')
+    smogon = wrap(smogon, ['something', optional('something')])
+        
 
 Class = Pokemon
