@@ -123,14 +123,7 @@ class Pokemon(callbacks.Plugin):
     
     forme = wrap(forme, ['something'])
     
-    def ivsingle(self, irc, msg, args, poke, stat, amount, level, nature, ev):
-        """<[forme] pokemon> <stat> <amount> <level> <nature> [<ev>]
-        
-        Calculates the IV of a stat with given pokemon/level/nature.
-        Stat is "HP/ATK/DEF/STK/SDF/SPD". If EV is empty, it will be 0.
-        If pokemon has a forme (like Mega), capture it like "Mega Charizard X"
-        or "Trash Wormadam" (plant is default).
-        """
+    def _ivcalc(self, poke, stat, amount, level, nature, ev):
         poke = poke.split(' ')
         formes = ['SANDY', 'TRASH', 'SUNNY', 'RAINY', 'SNOWY', 'ATTACK', \
                   'DEFENSE', 'SPEED', 'HEAT', 'WASH', 'FROST', 'FAN', 'MOW', \
@@ -145,6 +138,7 @@ class Pokemon(callbacks.Plugin):
         
         if not ev: ev = 0
         
+        # Mega was added for compatability reasons, because it's only avaiable in battle, it's not very useful.
         if poke[0].upper() == 'MEGA':
             if len(poke) > 2:
                 stats = self._db(poke[1], poke[2].upper())[0][5:11]
@@ -166,125 +160,85 @@ class Pokemon(callbacks.Plugin):
             extra = 10
             hp = 100
         
-        IV = (amount - ((2 * stats[sts.index(stat.upper())] + ev / 4 + hp) * level * bonus / 100) - extra * bonus) / bonus
+        return (((amount - ((2 * stats[sts.index(stat.upper())] + (ev / 4) + hp) * level * bonus / 100) - extra * bonus) * 100) / bonus) / level
         
-        irc.reply(str(IV))
+    def reverseiv(self, irc, msg, args, poke, stat, iv, level, nature, ev):
+        """<[forme] pokemon> <stat> <iv> <level> <nature> <[ev]>
+        
+        Calculates the stat given the IV/EV/Nature/Level. If EV is empty, 
+        it will be 0. Quick fix, nature-bonus should be set manually (0.9, 1 or 1.1)
+        """
+        
+        if not ev: ev = 0
+        poke = poke.split(' ')
+        formes = ['SANDY', 'TRASH', 'SUNNY', 'RAINY', 'SNOWY', 'ATTACK', \
+                  'DEFENSE', 'SPEED', 'HEAT', 'WASH', 'FROST', 'FAN', 'MOW', \
+                  'ORIGIN', 'SKY', 'ZEN', 'THERIAN', 'BLACK', 'WHITE', \
+                  'PIROUETTE', 'BLADE', 'AVERAGE', 'LARGE', 'SUPER']
+        natures = ('LONELY', 'BRAVE', 'ADAMANT', 'NAUGHTY', 'BOLD', 'RELAXED', 'IMPISH', 'LAX', 'MODEST', 'MILD', 'QUIET', 'RASH', 'CALM', 'GENTLE', 'SASSY', 'CAREFUL', 'TIMID', 'HASTY', 'JOLLY', 'NAIVE')
+        natureP = ('ATK','ATK','ATK','ATK','DEF','DEF','DEF','DEF','SPD','SPD','SPD','SPD','STK','STK','STK','STK','SPF','SPF','SPF','SPF')
+        natureM = ('DEF','SPD','STK','SDF','ATK','SPD','STK','SDF','ATK','DEF','STK','SDF','ATK','DEF','SPD','SDF','ATK','DEF','SPD','STK')
+        sts = ('HP', 'ATK', 'DEF', 'STK', 'SDF', 'SPD')
+        
+        if poke[0].upper() == 'MEGA':
+            if len(poke) > 2:
+                stats = self._db(poke[1], poke[2].upper())[0][5:11]
+            else:
+                stats = self._db(poke[1], 'mega')[0][5:11]
+        elif poke[0].upper() in formes:
+            stats = self._dbforme(poke[1], poke[0])[5:11]
+        else:
+            stats = self._db(poke[0], 'poke')[0][7:13]
+        
+        b = natures.index(nature.upper())
+        if natureP[b] == stat.upper():
+            bonus = 1.1
+        elif natureM[b] == stat.upper():
+            bonus = 0.9
+        else:
+            bonus = 1
+        
+        amount = (((iv + (2 * stats[sts.index(stat.upper())]) + ev/4) * level * bonus) / 100 + 5) * bonus
+        
+        irc.reply(str(amount))
+        
+    reverseiv = wrap(reverseiv, ['something', 'something', 'int', 'int', 'something', optional('int')])
+        
+    def ivsingle(self, irc, msg, args, poke, stat, amount, level, nature, ev):
+        """<[forme] pokemon> <stat> <amount> <level> <nature> <[ev]>
+        
+        Calculates the IV of a stat with given pokemon/level/nature.
+        Stat is "HP/ATK/DEF/STK/SDF/SPD". If EV is empty, it will be 0.
+        If pokemon has a forme (like Mega), capture it like "Mega Charizard X"
+        or "Trash Wormadam" (plant is default).
+        """
+        if not ev: ev = 0
+        IV = self._ivcalc(poke, stat, amount, level, nature, ev)
+        irc.reply(stat + ': ' + str(IV))
         
     ivsingle = wrap(ivsingle, ['something', 'something', 'int', 'int', 'something', optional('int')])
     
-    def iv(self, irc, msg, args, species, level, nature, hp, atk, defe, spa, spd, spe):
+    def iv(self, irc, msg, args, poke, level, nature, hp, atk, defe, spa, spd, spe, ev):
         """ <pokemon> <level> <nature> <hp> <atk> <def> <sp.atk> <sp.def> <spd>
         
-        Calculates possible IVs of a given pokemon. Please insert all stats.
+        Calculates possible IVs of a given pokemon. Please insert all stats. 
+        EV optional, else it will be 0.
         """
         ####DOES NOT WORK - DEVELOPMENT NEEDED (rewrite to SQL request instead of file)
         ####!!!!!
-
-        bases = []
- 
-        try:
-            stats = [int(hp), int(atk), int(defe), int(spa), int(spd), int(spe)]
-        except:
-            irc.reply("Invalid argument(s)")
-            return 0
- 
-        coefc = 0
-        intercs = 0
-        found = 0
-        natures = 0
-        high = []
-        low = []
- 
-        naturre = str.upper(nature)
- 
-        if naturre == "SERIOUS" or naturre == "QUIRKY" or naturre == "HARDY" or naturre == "BASHFUL":
-            natures = [0,1,1,1,1,1]
-        elif naturre == "LONELY":
-            natures = [0,1.1,0.9,1,1,1]
-        elif naturre == "ADAMANT":
-            natures = [0,1.1,1,0.9,1,1]
-        elif naturre == "NAUGHTY":
-            natures = [0,1.1,1,1,0.9,1]
-        elif naturre == "BRAVE":
-            natures = [0,1.1,1,1,1,0.9]
-        elif naturre == "BOLD":
-            natures = [0,0.9,1.1,1,1,1]
-        elif naturre == "IMPISH":
-            natures = [0,1,1.1,0.9,1,1]
-        elif naturre == "LAX":
-            natures = [0,1,1.1,1,0.9,1]
-        elif naturre == "RELAXED":
-            natures = [0,1,1.1,1,1,0.9]
-        elif naturre == "MODEST":
-            natures = [0,0.9,1,1.1,1,1]
-        elif naturre == "MILD":
-            natures = [0,1,0.9,1.1,1,1]
-        elif naturre == "RASH":
-            natures = [0,1,1,1.1,0.9,1]
-        elif naturre == "QUIET":
-            natures = [0,1,1,1.1,1,0.9]
-        elif naturre == "CALM":
-            natures = [0,0.9,1,1,1.1,1]
-        elif naturre == "GENTLE":
-            natures = [0,1,0.9,1,1.1,1]
-        elif naturre == "CAREFUL":
-            natures = [0,1,1,0.9,1.1,1]
-        elif naturre == "SASSY":
-            natures = [0,1,1,1,1.1,0.9]
-        elif naturre == "TIMID":
-            natures = [0,0.9,1,1,1,1.1]
-        elif naturre == "HASTY":
-            natures = [0,1,0.9,1,1,1.1]
-        elif naturre == "JOLLY":
-            natures = [0,1,1,0.9,1,1.1]
-        elif naturre == "NAIVE":
-            natures = [0,1,1,1,0.9,1.1]
-        else:
-            natures = [0,1,1,1,1,1]
-
-   
-        pokedb = open('local.txt', 'r')
- 
-        for i in pokedb.readlines():
-            if i[0:len(species)] == species:
-                found = 1
-                index = 0
-                sstring = ""
-                for j in i:
-                    if index != 0 and j != "|" and j != "\n":
-                        sstring += j
-                    if j == "|":
-                        index += 1
-                        bases.append(int(sstring))
-                        sstring = ""
-            break
- 
-        if found == 0:
-            irc.reply("Pokemon not found")
-            return 0
-        else:
-            coefc = float(level)/100.00
-            for i in bases:
-                intercs.append(float(i)*float(level)/50.00)
         
-            for i in range(0,6):
-                ivrange = []
-                if i == 0:
-                    for j in range(1,32):
-                        if (math.floor(coefc*j+intercs[i]+int(level)+10) == stats[i]):
-                            ivrange.append(j)
-                    low.append(ivrange[0])
-                    high.append(ivrange[len(ivrange)-1])
-                else:
-                    for j in range(1,32):
-                        if math.floor(natures[i]*(math.floor(coefc*j+intercs[i]+5))) == stats[i]:
-                            ivrange.append(j)
-                    low.append(ivrange[0])
-                    high.append(ivrange[len(ivrange)-1])
- 
-        irc.reply(str(species + " (" + nature + "): HP: " + str(low[0]) + "-" + str(high[0]) + ", Atk: " + str(low[1]) + "-" + str(high[1]) + ", Def: " + str(low[2]) + "-" + str(high[2]) + ", S.Atk: " + str(low[3]) + "-" + str(high[3]) + ", S.Def: " + str(low[4]) + "-" + str(high[4]) + ", Spd: " + str(low[5]) + "-" + str(high[5])))
-    
-    #iv = wrap(iv, ['something', 'something', 'something', 'something', 'something', 'something', 'something', 'something', 'something'])
+        if not ev: ev = 0
+        
+        HP = self._ivcalc(poke, 'HP', hp, level, nature, ev)
+        ATK = self._ivcalc(poke, 'ATK', atk, level, nature, ev)
+        DEF = self._ivcalc(poke, 'DEF', defe, level, nature, ev)
+        STK = self._ivcalc(poke, 'STK', spa, level, nature, ev)
+        SDF = self._ivcalc(poke, 'SDF', spd, level, nature, ev)
+        SPD = self._ivcalc(poke, 'SPD', spe, level, nature, ev)
+        
+        irc.reply('HP: ' + str(HP) + ' ATK: ' + str(ATK) + ' DEF: ' + str(DEF) + ' STK: ' + str(STK) + ' SDF: ' + str(SDF) + ' SPD: ' + str(SPD))
+        
+    iv = wrap(iv, ['something', 'int', 'something', 'int', 'int', 'int', 'int', 'int', 'int', optional('int')])
     
     def basestats(self, irc, msg, args, poke):
         """<pokemon>
@@ -586,6 +540,5 @@ class Pokemon(callbacks.Plugin):
         except:
             irc.reply('Something went wrong.')
     smogon = wrap(smogon, ['something', optional('something')])
-        
-
+    
 Class = Pokemon
