@@ -224,9 +224,6 @@ class Pokemon(callbacks.Plugin):
         Calculates possible IVs of a given pokemon. Please insert all stats. 
         EV optional, else it will be 0.
         """
-        ####DOES NOT WORK - DEVELOPMENT NEEDED (rewrite to SQL request instead of file)
-        ####!!!!!
-        
         if not ev: ev = 0
         
         HP = self._ivcalc(poke, 'HP', hp, level, nature, ev)
@@ -521,24 +518,40 @@ class Pokemon(callbacks.Plugin):
     def smogon(self, irc, msg, args, poke, gen):
         """<pokemon> [<gen>]
         
-        Retreives the Tier of the given pokemon for the given gen.
+        Retrieves the Tier of the given pokemon for the given gen.
         If no gen is given, will default to gen 5 (BW)
         """
-        if gen == '1':
-            g = 'rb'
-        elif gen == '2':
-            g = 'gs'
-        elif gen == '3':
-            g = 'rs'
-        elif gen == '4':
-            g = 'dp'
-        else:
-            g = 'bw'
+        g = ['bw','rb','gs','rs','dp','bw','xy']
         try:
-            soup = BS(urlopen('http://www.smogon.com/%s/pokemon/%s' % (g, poke)).read(), 'html.parser', parse_only=SS(class_="info"))
-            irc.reply('Gen: ' + g + ' Tier: '+ soup.get_text().split('\n\n')[3])
+            gen = g[int(gen)]
+        except:
+            gen = 'bw'
+        url = "http://www.smogon.com/%s/pokemon/%s" % (gen, poke)
+        try:
+            soup = BS(urlopen(url).read(), 'html.parser', parse_only=SS(class_="info"))
+            irc.reply('Gen: ' + gen.upper() + ' Tier: '+ soup.get_text().split('\n\n')[3] + " url: " + url)
         except:
             irc.reply('Something went wrong.')
     smogon = wrap(smogon, ['something', optional('something')])
+    
+    def ev(self, irc, msg, args, poke):
+        """<pokemon>
+        
+        Outputs the amount of EV this pokemon will give when defeated.
+        """
+        # Probably some way to do this better
+        msg = ""
+        i = 0
+        Type = [' HP ', ' Atk ', ' Def ', ' SpAtk ', ' SpDef ', ' Spd ']
+        EV = self._db(poke, "poke")[0][13].split(',')
+
+        while i < 6:
+            if int(EV[i]) > 0:
+                msg += Type[i] + EV[i]
+            i += 1
+
+        irc.reply(poke + " yields:" + msg)
+    ev = wrap(ev, ['something'])
+        
     
 Class = Pokemon
